@@ -47,6 +47,9 @@ class SingularityEnvironment:
                     check=True,
                     capture_output=True,
                 )
+                # Ensure /data directory exists in sandbox to prevent mount errors
+                data_dir = sandbox_dir / "data"
+                data_dir.mkdir(exist_ok=True)
                 break
             except subprocess.CalledProcessError as e:
                 shutil.rmtree(sandbox_dir, ignore_errors=True)
