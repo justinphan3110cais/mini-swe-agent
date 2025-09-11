@@ -203,6 +203,7 @@ def main(
     redo_existing: bool = typer.Option(False, "--redo-existing", help="Redo existing instances", rich_help_panel="Data selection"),
     config_spec: Path = typer.Option( builtin_config_dir / "extra" / "swebench.yaml", "-c", "--config", help="Path to a config file", rich_help_panel="Basic"),
     environment_class: str | None = typer.Option( None, "--environment-class", help="Environment type to use. Recommended are docker or singularity", rich_help_panel="Advanced"),
+    models_config: Path | None = typer.Option(None, "--models-config", help="Path to models configuration YAML file with custom model definitions", rich_help_panel="Advanced"),
 ) -> None:
     # fmt: on
     output_path = Path(output)
@@ -225,8 +226,33 @@ def main(
     config = yaml.safe_load(get_config_path(config_spec).read_text())
     if environment_class is not None:
         config.setdefault("environment", {})["environment_class"] = environment_class
-    if model is not None:
+    
+    # Handle custom models configuration
+    models_definitions = {}
+    if models_config is not None:
+        models_definitions = yaml.safe_load(models_config.read_text())
+        logger.info(f"Loaded models config from {models_config} with {len(models_definitions)} model definitions")
+    
+    # Resolve model alias if using models_config
+    resolved_model = model
+    if model is not None and models_config is not None and model in models_definitions:
+        model_def = models_definitions[model]
+        resolved_model = model_def.get("model_name", model)
+        logger.info(f"Resolved model alias '{model}' -> '{resolved_model}'")
+        
+        # Apply model configuration from alias
+        config.setdefault("model", {})
+        config["model"]["model_name"] = resolved_model
+        # Support both model_kwargs (legacy) and generation_config (new format)
+        if "generation_config" in model_def:
+            config["model"].setdefault("model_kwargs", {}).update(model_def["generation_config"])
+            logger.info(f"Applied generation_config: {model_def['generation_config']}")
+        elif "model_kwargs" in model_def:
+            config["model"].setdefault("model_kwargs", {}).update(model_def["model_kwargs"])
+            logger.info(f"Applied model_kwargs: {model_def['model_kwargs']}")
+    elif model is not None:
         config.setdefault("model", {})["model_name"] = model
+    
     if model_class is not None:
         config.setdefault("model", {})["model_class"] = model_class
 
