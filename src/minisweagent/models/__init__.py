@@ -76,6 +76,8 @@ _MODEL_CLASS_MAPPING = {
     "litellm": "minisweagent.models.litellm_model.LitellmModel",
     "openrouter": "minisweagent.models.openrouter_model.OpenRouterModel",
     "deterministic": "minisweagent.models.test_models.DeterministicModel",
+    "custom_llm_agent": "minisweagent.models.custom_llm_agent.CustomLLMAgentModel",
+    "yaml_config": "minisweagent.models.yaml_model_loader.get_model_from_yaml_config",
 }
 
 
