@@ -242,11 +242,17 @@ def main(
         # Apply model configuration from alias
         config.setdefault("model", {})
         config["model"]["model_name"] = resolved_model
+        
+        # Handle model_class from models_config
+        if "model_class" in model_def and model_def["model_class"]:
+            config["model"]["model_class"] = model_def["model_class"]
+            logger.info(f"Applied model_class: {model_def['model_class']}")
+        
         # Support both model_kwargs (legacy) and generation_config (new format)
-        if "generation_config" in model_def:
+        if "generation_config" in model_def and model_def["generation_config"]:
             config["model"].setdefault("model_kwargs", {}).update(model_def["generation_config"])
             logger.info(f"Applied generation_config: {model_def['generation_config']}")
-        elif "model_kwargs" in model_def:
+        elif "model_kwargs" in model_def and model_def["model_kwargs"]:
             config["model"].setdefault("model_kwargs", {}).update(model_def["model_kwargs"])
             logger.info(f"Applied model_kwargs: {model_def['model_kwargs']}")
     elif model is not None:

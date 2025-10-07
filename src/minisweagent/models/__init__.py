@@ -73,11 +73,11 @@ def get_model_name(input_model_name: str | None = None, config: dict | None = No
 
 _MODEL_CLASS_MAPPING = {
     "anthropic": "minisweagent.models.anthropic.AnthropicModel",
+    "grok4": "minisweagent.models.grok4_model.Grok4Model",
     "litellm": "minisweagent.models.litellm_model.LitellmModel",
     "openrouter": "minisweagent.models.openrouter_model.OpenRouterModel",
     "deterministic": "minisweagent.models.test_models.DeterministicModel",
-    "custom_llm_agent": "minisweagent.models.custom_llm_agent.CustomLLMAgentModel",
-    "yaml_config": "minisweagent.models.yaml_model_loader.get_model_from_yaml_config",
+    "local_vllm": "minisweagent.models.local_vllm_model.LocalVllmModel",
 }
 
 
@@ -103,6 +103,17 @@ def get_model_class(model_name: str, model_class: str = "") -> type:
         from minisweagent.models.anthropic import AnthropicModel
 
         return AnthropicModel
+    
+    if "grok-4" in model_name.lower() and "grok-4-fast" not in model_name.lower():
+        from minisweagent.models.grok4_model import Grok4Model
+
+        return Grok4Model
+    
+    # Check for local/ prefix for local vLLM models
+    if model_name.startswith("local/"):
+        from minisweagent.models.local_vllm_model import LocalVllmModel
+
+        return LocalVllmModel
 
     # Default to LitellmModel
     from minisweagent.models.litellm_model import LitellmModel
