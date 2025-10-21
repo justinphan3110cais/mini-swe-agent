@@ -13,27 +13,17 @@ class AnthropicModel(LitellmModel):
     """
 
     def __init__(self, **kwargs):
-        # Filter out use_cache from model_kwargs as it's handled by set_cache_control, not LiteLLM
-        if "model_kwargs" in kwargs and "use_cache" in kwargs["model_kwargs"]:
+        # Clean up model_kwargs for Anthropic-specific requirements
+        if "model_kwargs" in kwargs:
             kwargs = kwargs.copy()
             kwargs["model_kwargs"] = kwargs["model_kwargs"].copy()
-            kwargs["model_kwargs"].pop("use_cache", None)
-        
-        # Check if thinking is enabled and adjust temperature accordingly
-        # When thinking is enabled, temperature must be exactly 1
-        if "model_kwargs" in kwargs:
-            model_kwargs = kwargs.get("model_kwargs", {})
-            thinking_config = model_kwargs.get("thinking")
             
+            # Remove use_cache - handled by set_cache_control, not LiteLLM
+            kwargs["model_kwargs"].pop("use_cache", None)
+            
+            # Force temperature=1 when thinking is enabled
+            thinking_config = kwargs["model_kwargs"].get("thinking")
             if thinking_config and thinking_config.get("type") == "enabled":
-                # Force temperature to 1 when thinking is enabled
-                if "model_kwargs" not in kwargs:
-                    kwargs["model_kwargs"] = {}
-                elif kwargs["model_kwargs"] is model_kwargs:
-                    # Make a copy to avoid modifying the original
-                    kwargs = kwargs.copy()
-                    kwargs["model_kwargs"] = kwargs["model_kwargs"].copy()
-                
                 kwargs["model_kwargs"]["temperature"] = 1
         
         super().__init__(**kwargs)
@@ -43,11 +33,9 @@ class AnthropicModel(LitellmModel):
         if rotating_keys := os.getenv("ANTHROPIC_API_KEYS"):
             api_key = get_key_per_thread(rotating_keys.split("::"))
         
-        # Check if thinking is enabled and adjust temperature accordingly
-        # When thinking is enabled, temperature must be exactly 1
+        # Force temperature=1 for thinking-enabled models (override any runtime temperature)
         thinking_config = self.config.model_kwargs.get("thinking")
         if thinking_config and thinking_config.get("type") == "enabled":
-            # Force temperature to 1 when thinking is enabled, override any runtime temperature
             kwargs = kwargs.copy() if kwargs else {}
             kwargs["temperature"] = 1
         
