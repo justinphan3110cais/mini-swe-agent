@@ -12,6 +12,14 @@ class AnthropicModel(LitellmModel):
     if running with multiple agents in parallel threads.
     """
 
+    def __init__(self, **kwargs):
+        # Filter out use_cache from model_kwargs as it's handled by set_cache_control, not LiteLLM
+        if "model_kwargs" in kwargs and "use_cache" in kwargs["model_kwargs"]:
+            kwargs = kwargs.copy()
+            kwargs["model_kwargs"] = kwargs["model_kwargs"].copy()
+            kwargs["model_kwargs"].pop("use_cache", None)
+        super().__init__(**kwargs)
+
     def query(self, messages: list[dict], **kwargs) -> dict:
         api_key = None
         if rotating_keys := os.getenv("ANTHROPIC_API_KEYS"):
