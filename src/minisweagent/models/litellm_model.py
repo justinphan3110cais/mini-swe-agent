@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import litellm
+litellm.suppress_debug_info = True
+
 from tenacity import (
     before_sleep_log,
     retry,
@@ -63,13 +65,8 @@ class LitellmModel:
         response = self._query(messages, **kwargs)
         try:
             cost = litellm.cost_calculator.completion_cost(response)
-        except Exception as e:
-            logger.critical(
-                f"Error calculating cost for model {self.config.model_name}: {e}. "
-                "Please check the 'Updating the model registry' section in the documentation at "
-                "https://klieret.short.gy/litellm-model-registry Still stuck? Please open a github issue for help!"
-            )
-            raise
+        except Exception:
+            cost = 0.0
         self.n_calls += 1
         self.cost += cost
         GLOBAL_MODEL_STATS.add(cost)

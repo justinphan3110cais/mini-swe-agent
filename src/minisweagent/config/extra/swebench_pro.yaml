@@ -36,7 +36,7 @@ agent:
     2. Provide exactly ONE bash command to execute
 
     ## Important Boundaries
-    - MODIFY: Regular source code files in / (this is the working directory for all your subsequent commands)
+    - MODIFY: Regular source code files in /app (this is the working directory for all your subsequent commands)
     - DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)
 
     ## Recommended Workflow
@@ -213,7 +213,7 @@ agent:
   cost_limit: 3.
 
 environment:
-  cwd: "/testbed"
+  cwd: "/app"
   timeout: 60
   env:
     PAGER: cat

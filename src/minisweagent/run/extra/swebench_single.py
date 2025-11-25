@@ -48,6 +48,11 @@ def main(
         instance_spec = sorted(instances.keys())[int(instance_spec)]
     instance: dict = instances[instance_spec]  # type: ignore
 
+    # Auto-switch to swebench_pro.yaml if using pro subset and default config
+    if subset == "pro" and config_path == builtin_config_dir / "extra" / "swebench.yaml":
+        config_path = builtin_config_dir / "extra" / "swebench_pro.yaml"
+        logger.info(f"Auto-switching to SWE-bench Pro config: {config_path}")
+
     config = yaml.safe_load(get_config_path(config_path).read_text())
     if environment_class is not None:
         config.setdefault("environment", {})["environment_class"] = environment_class
@@ -55,7 +60,7 @@ def main(
         config.setdefault("model", {})["model_class"] = model_class
     if exit_immediately:
         config.setdefault("agent", {})["confirm_exit"] = False
-    env = get_sb_environment(config, instance)
+    env = get_sb_environment(config, instance, subset=subset)
     agent = InteractiveAgent(
         get_model(model_name, config.get("model", {})),
         env,
@@ -71,6 +76,11 @@ def main(
         extra_info = {"traceback": traceback.format_exc()}
     finally:
         save_traj(agent, output, exit_status=exit_status, result=result, extra_info=extra_info)  # type: ignore[arg-type]
+
+
+if __name__ == "__main__":
+    app()
+
 
 
 if __name__ == "__main__":

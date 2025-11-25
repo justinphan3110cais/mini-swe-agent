@@ -54,7 +54,6 @@ def get_model(input_model_name: str | None = None, config: dict | None = None) -
 
     if (from_env := os.getenv("MSWEA_MODEL_API_KEY")) and not str(type(model_class)).endswith("DeterministicModel"):
         config.setdefault("model_kwargs", {})["api_key"] = from_env
-
     return model_class(**config)
 
 

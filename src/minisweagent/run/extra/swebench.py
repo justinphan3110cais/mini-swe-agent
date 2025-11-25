@@ -5,6 +5,7 @@
 
 import concurrent.futures
 import json
+import os
 import random
 import re
 import threading
@@ -17,6 +18,7 @@ import yaml
 from datasets import load_dataset
 from jinja2 import StrictUndefined, Template
 from rich.live import Live
+from tqdm import tqdm
 
 from minisweagent import Environment
 from minisweagent.agents.default import DefaultAgent
@@ -26,6 +28,18 @@ from minisweagent.models import get_model
 from minisweagent.run.extra.utils.batch_progress import RunBatchProgressManager
 from minisweagent.run.utils.save import save_traj
 from minisweagent.utils.log import add_file_handler, logger
+
+
+def _resolve_model_config(config: dict) -> dict:
+    """Resolve api_key_env from env vars and rename api_base_url to api_base."""
+    resolved = config.copy()
+    if "api_key_env" in resolved:
+        if key := os.getenv(resolved.pop("api_key_env")):
+            resolved["api_key"] = key
+    if "api_base_url" in resolved:
+        resolved["api_base"] = resolved.pop("api_base_url")
+    return resolved
+
 
 _HELP_TEXT = """Run mini-SWE-agent on SWEBench instances.
 
@@ -43,6 +57,7 @@ DATASET_MAPPING = {
     "multimodal": "princeton-nlp/SWE-Bench_Multimodal",
     "multilingual": "swe-bench/SWE-Bench_Multilingual",
     "smith": "SWE-bench/SWE-smith",
+    "pro": "ScaleAI/SWE-bench_Pro",
     "_test": "klieret/swe-bench-dummy-test-dataset",
 }
 
@@ -66,21 +81,65 @@ class ProgressTrackingAgent(DefaultAgent):
         return super().step()
 
 
-def get_swebench_docker_image_name(instance: dict) -> str:
+def _get_swebench_pro_image_name(instance_id: str, repo: str) -> str:
+    """Get Docker image name for SWE-bench Pro instance.
+    
+    This is copied from swebench_pro/helper_code/image_uri.py
+    to avoid external dependencies.
+    """
+    repo_base, repo_name_only = repo.lower().split("/")
+    hsh = instance_id.replace("instance_", "")
+
+    if instance_id == "instance_element-hq__element-web-ec0f940ef0e8e3b61078f145f34dc40d1938e6c5-vnan":
+        repo_name_only = 'element-web'  # Keep full name for this one case
+    elif 'element-hq' in repo.lower() and 'element-web' in repo.lower():
+        repo_name_only = 'element'
+        if hsh.endswith('-vnan'):
+            hsh = hsh[:-5]
+    # All other repos: strip -vnan suffix
+    elif hsh.endswith('-vnan'):
+        hsh = hsh[:-5]
+    
+    tag = f"{repo_base}.{repo_name_only}-{hsh}"
+    if len(tag) > 128:
+        tag = tag[:128]
+    
+    return f"jefzda/sweap-images:{tag}"
+
+
+def get_swebench_docker_image_name(instance: dict, subset: str = "verified") -> str:
     """Get the image name for a SWEBench instance."""
+    # If image_name is explicitly provided, use it
     image_name = instance.get("image_name", None)
-    if image_name is None:
-        # Docker doesn't allow double underscore, so we replace them with a magic token
+    if image_name is not None:
+        return image_name
+    
+    # SWE-bench Pro uses different image format
+    if subset == "pro" or "pro" in subset.lower():
+        repo = instance.get("repo", "")
+        if not repo:
+            raise ValueError(f"Missing repo field for instance {instance['instance_id']}")
+        image_name = _get_swebench_pro_image_name(instance["instance_id"], repo)
+    else:
+        # Original SWE-bench format
         iid = instance["instance_id"]
         id_docker_compatible = iid.replace("__", "_1776_")
-        image_name = f"docker.io/swebench/sweb.eval.x86_64.{id_docker_compatible}:latest".lower()
-    return image_name
+        image_name = f"swebench/sweb.eval.x86_64.{id_docker_compatible}:latest".lower()
+    
+    return f"docker.io/{image_name}"
 
 
-def get_sb_environment(config: dict, instance: dict) -> Environment:
+def get_sb_environment(config: dict, instance: dict, subset: str = "verified") -> Environment:
     env_config = config.setdefault("environment", {})
     env_config["environment_class"] = env_config.get("environment_class", "docker")
-    image_name = get_swebench_docker_image_name(instance)
+    
+    # Set correct working directory based on subset
+    if subset == "pro" or "pro" in subset.lower():
+        env_config["cwd"] = "/app"  # SWE-bench Pro uses /app
+    else:
+        env_config.setdefault("cwd", "/testbed")  # SWE-bench Verified uses /testbed
+    
+    image_name = get_swebench_docker_image_name(instance, subset=subset)
     if env_config["environment_class"] == "docker":
         env_config["image"] = image_name
     elif env_config["environment_class"] == "singularity":
@@ -124,6 +183,7 @@ def process_instance(
     output_dir: Path,
     config: dict,
     progress_manager: RunBatchProgressManager,
+    subset: str = "verified",
 ) -> None:
     """Process a single SWEBench instance."""
     instance_id = instance["instance_id"]
@@ -141,7 +201,7 @@ def process_instance(
     extra_info = None
 
     try:
-        env = get_sb_environment(config, instance)
+        env = get_sb_environment(config, instance, subset=subset)
         agent = ProgressTrackingAgent(
             model,
             env,
@@ -181,10 +241,11 @@ def filter_instances(
     if (after_filter := len(instances)) != before_filter:
         logger.info(f"Instance filter: {before_filter} -> {after_filter} instances")
     if slice_spec:
+        before_slice = len(instances)
         values = [int(x) if x else None for x in slice_spec.split(":")]
         instances = instances[slice(*values)]
-        if (after_slice := len(instances)) != before_filter:
-            logger.info(f"Instance slice: {before_filter} -> {after_slice} instances")
+        if (after_slice := len(instances)) != before_slice:
+            logger.info(f"Instance slice: {before_slice} -> {after_slice} instances")
     return instances
 
 
@@ -222,6 +283,10 @@ def main(
         instances = [instance for instance in instances if instance["instance_id"] not in existing_instances]
     logger.info(f"Running on {len(instances)} instances...")
 
+    # Auto-switch to swebench_pro.yaml if using pro subset and default config
+    if subset == "pro" and config_spec == builtin_config_dir / "extra" / "swebench.yaml":
+        config_spec = builtin_config_dir / "extra" / "swebench_pro.yaml"
+        logger.info(f"Auto-switching to SWE-bench Pro config: {config_spec}")
 
     config = yaml.safe_load(get_config_path(config_spec).read_text())
     if environment_class is not None:
@@ -236,7 +301,7 @@ def main(
     resolved_model = model
     if model is not None and models_config is not None and model in models_definitions:
         model_def = models_definitions[model]
-        resolved_model = model_def.get("model_name", model)
+        resolved_model = model_def.get("model")
         logger.info(f"Resolved model alias '{model}' -> '{resolved_model}'")
         
         # Apply model configuration from alias
@@ -250,10 +315,14 @@ def main(
         
         # Support both model_kwargs (legacy) and generation_config (new format)
         if "generation_config" in model_def and model_def["generation_config"]:
-            config["model"].setdefault("model_kwargs", {}).update(model_def["generation_config"])
+            # Resolve environment variables and rename api_base_url to api_base
+            resolved_config = _resolve_model_config(model_def["generation_config"])
+            config["model"].setdefault("model_kwargs", {}).update(resolved_config)
             logger.info(f"Applied generation_config: {model_def['generation_config']}")
         elif "model_kwargs" in model_def and model_def["model_kwargs"]:
-            config["model"].setdefault("model_kwargs", {}).update(model_def["model_kwargs"])
+            # Resolve environment variables and rename api_base_url to api_base
+            resolved_config = _resolve_model_config(model_def["model_kwargs"])
+            config["model"].setdefault("model_kwargs", {}).update(resolved_config)
             logger.info(f"Applied model_kwargs: {model_def['model_kwargs']}")
     elif model is not None:
         config.setdefault("model", {})["model_name"] = model
@@ -264,20 +333,23 @@ def main(
     progress_manager = RunBatchProgressManager(len(instances), output_path / f"exit_statuses_{time.time()}.yaml")
 
     def process_futures(futures: dict[concurrent.futures.Future, str]):
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                future.result()
-            except concurrent.futures.CancelledError:
-                pass
-            except Exception as e:
-                instance_id = futures[future]
-                logger.error(f"Error in future for instance {instance_id}: {e}", exc_info=True)
-                progress_manager.on_uncaught_exception(instance_id, e)
+        with tqdm(total=len(futures), desc="Processing instances", unit="instance") as pbar:
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except concurrent.futures.CancelledError:
+                    pass
+                except Exception as e:
+                    instance_id = futures[future]
+                    logger.error(f"Error in future for instance {instance_id}: {e}", exc_info=True)
+                    progress_manager.on_uncaught_exception(instance_id, e)
+                finally:
+                    pbar.update(1)
 
     with Live(progress_manager.render_group, refresh_per_second=4):
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(process_instance, instance, output_path, config, progress_manager): instance[
+                executor.submit(process_instance, instance, output_path, config, progress_manager, subset): instance[
                     "instance_id"
                 ]
                 for instance in instances
