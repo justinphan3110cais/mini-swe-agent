@@ -71,22 +71,17 @@ def get_model_name(input_model_name: str | None = None, config: dict | None = No
 
 
 _MODEL_CLASS_MAPPING = {
-    "anthropic": "minisweagent.models.anthropic.AnthropicModel",
-    "grok4": "minisweagent.models.grok4_model.Grok4Model",
-    "litellm": "minisweagent.models.litellm_model.LitellmModel",
-    "openrouter": "minisweagent.models.openrouter_model.OpenRouterModel",
+    "llm_agent": "minisweagent.models.llm_agent_model.LLMAgentModel",
     "deterministic": "minisweagent.models.test_models.DeterministicModel",
-    "local_vllm": "minisweagent.models.local_vllm_model.LocalVllmModel",
 }
 
 
 def get_model_class(model_name: str, model_class: str = "") -> type:
     """Select the best model class.
 
-    If a model_class is provided (as shortcut name, or as full import path,
-    e.g., "anthropic" or "minisweagent.models.anthropic.AnthropicModel"),
-    it takes precedence over the `model_name`.
-    Otherwise, the model_name is used to select the best model class.
+    If a model_class is provided (as shortcut name, or as full import path),
+    it takes precedence over the model_name.
+    Otherwise, defaults to LLMAgentModel which uses llm_agents.py.
     """
     if model_class:
         full_path = _MODEL_CLASS_MAPPING.get(model_class, model_class)
@@ -98,23 +93,7 @@ def get_model_class(model_name: str, model_class: str = "") -> type:
             msg = f"Unknown model class: {model_class} (resolved to {full_path}, available: {_MODEL_CLASS_MAPPING})"
             raise ValueError(msg)
 
-    if any(s in model_name.lower() for s in ["anthropic", "sonnet", "opus", "claude"]):
-        from minisweagent.models.anthropic import AnthropicModel
+    # Default to LLMAgentModel (uses llm_agents.py for all providers)
+    from minisweagent.models.llm_agent_model import LLMAgentModel
 
-        return AnthropicModel
-    
-    if "grok-4" in model_name.lower() and "grok-4-fast" not in model_name.lower():
-        from minisweagent.models.grok4_model import Grok4Model
-
-        return Grok4Model
-    
-    # Check for local/ prefix for local vLLM models
-    if model_name.startswith("local/"):
-        from minisweagent.models.local_vllm_model import LocalVllmModel
-
-        return LocalVllmModel
-
-    # Default to LitellmModel
-    from minisweagent.models.litellm_model import LitellmModel
-
-    return LitellmModel
+    return LLMAgentModel

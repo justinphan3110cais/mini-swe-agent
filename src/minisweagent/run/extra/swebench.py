@@ -30,17 +30,6 @@ from minisweagent.run.utils.save import save_traj
 from minisweagent.utils.log import add_file_handler, logger
 
 
-def _resolve_model_config(config: dict) -> dict:
-    """Resolve api_key_env from env vars and rename api_base_url to api_base."""
-    resolved = config.copy()
-    if "api_key_env" in resolved:
-        if key := os.getenv(resolved.pop("api_key_env")):
-            resolved["api_key"] = key
-    if "api_base_url" in resolved:
-        resolved["api_base"] = resolved.pop("api_base_url")
-    return resolved
-
-
 _HELP_TEXT = """Run mini-SWE-agent on SWEBench instances.
 
 [not dim]
@@ -314,15 +303,12 @@ def main(
             logger.info(f"Applied model_class: {model_def['model_class']}")
         
         # Support both model_kwargs (legacy) and generation_config (new format)
+        # llm_agents.py handles api_key_env and api_base_url internally
         if "generation_config" in model_def and model_def["generation_config"]:
-            # Resolve environment variables and rename api_base_url to api_base
-            resolved_config = _resolve_model_config(model_def["generation_config"])
-            config["model"].setdefault("model_kwargs", {}).update(resolved_config)
+            config["model"].setdefault("model_kwargs", {}).update(model_def["generation_config"])
             logger.info(f"Applied generation_config: {model_def['generation_config']}")
         elif "model_kwargs" in model_def and model_def["model_kwargs"]:
-            # Resolve environment variables and rename api_base_url to api_base
-            resolved_config = _resolve_model_config(model_def["model_kwargs"])
-            config["model"].setdefault("model_kwargs", {}).update(resolved_config)
+            config["model"].setdefault("model_kwargs", {}).update(model_def["model_kwargs"])
             logger.info(f"Applied model_kwargs: {model_def['model_kwargs']}")
     elif model is not None:
         config.setdefault("model", {})["model_name"] = model
