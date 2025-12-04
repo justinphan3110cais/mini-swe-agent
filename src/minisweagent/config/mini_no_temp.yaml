@@ -155,4 +155,3 @@ environment:
     TQDM_DISABLE: '1'
 model:
   model_kwargs:
-    drop_params: true

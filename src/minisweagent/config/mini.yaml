@@ -155,4 +155,3 @@ environment:
 model:
   model_kwargs:
     temperature: 0.0
-    drop_params: true
